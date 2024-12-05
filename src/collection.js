@@ -5,33 +5,27 @@ import userPurchaseInv from "./pur_module.js";
 
 const fetchAllData = async (req, res) => {
   try {
+    const startdate = "2023-11-30";
+    const enddate = "2024-12-05";
     const docs = await userSalesInv.aggregate([
       {
         $match: {
           "data.invoiceDate": {
-            $gte: "2023-11-30",
-            $lte: "2024-12-03",
+            $gte: startdate,
+            $lte: enddate,
           },
         },
       },
       {
-        $group: { _id: null, Anuual_inv_Amt: { $sum: "$data.totalInvValue" } },
+        $group: { _id: null, totalInvValue: { $sum: "$data.totalInvValue" } },
       },
     ]);
-    const result = docs.map((i) => {
-      console.log(i.Anuual_inv_Amt);
-      return `Amount:${i.Anuual_inv_Amt}`;
-    });
-    // const docs = await userSalesInv.find();
-    // const result = docs.map((i) => {
-    //   // console.log(i.);
-    //   return i.data.invoiceDate;
-    // });
+    console.log(docs);
+    const amount = docs[0].totalInvValue;
 
     !docs
       ? res.status(400).json({ message: "data not found" })
-      : res.status(200).json(result);
-    // mongoose.deleteModel("sales_invs");
+      : res.status(200).json({ amount });
   } catch (err) {
     res.status(500).json({ message: "Internal server error" });
     console.error("Error fetching data:", err.message);
@@ -40,33 +34,26 @@ const fetchAllData = async (req, res) => {
 
 const purchaseData = async (req, res) => {
   try {
+    const startdate = "2023-11-30";
+    const enddate = "2024-12-05";
     const docs = await userPurchaseInv.aggregate([
       {
         $match: {
           "data.invoiceDate": {
-            $gte: "2023-11-30",
-            $lte: "2024-12-03",
+            $gte: startdate,
+            $lte: enddate,
           },
         },
       },
       {
-        $group: { _id: null, Anuual_inv_Amt: { $sum: "$data.totalInvValue" } },
+        $group: { _id: null, totalInvValue: { $sum: "$data.totalInvValue" } },
       },
     ]);
-    const result = docs.map((i) => {
-      console.log(i.Anuual_inv_Amt);
-      return `Amount:${i.Anuual_inv_Amt}`;
-    });
 
-    // const docs = await userSalesInv.find();
-    // const result = docs.map((i) => {
-    //   // console.log(i.);
-    //   return i.data.invoiceDate;
-    // });
+    const result = docs[0].totalInvValue;
     !docs
       ? res.status(400).json({ message: "data not found" })
       : res.status(200).json(result);
-    // res.json(docs);
   } catch (err) {
     res.status(500).json({ message: "Internal server error" });
     console.log("Error fetching data:", err);
