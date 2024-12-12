@@ -327,6 +327,238 @@ const getTotTaxAmt = async (req, res) => {
     res.status(500).json({ messgae: error.messgae });
   }
 };
+
+const getdashboard = async (req, res) => {
+  try {
+    const id = "66389e368d8bc611a5603eeb";
+
+    let { startDate, endDate } = req.query;
+    console.log(new Date(startDate), "===", new Date(endDate));
+    const lastYear = new Date(startDate);
+
+    const currentYear = new Date(endDate);
+    let match = {
+      userId: new mongoose.Types.ObjectId(id),
+      "opt_process.date": {
+        $gte: lastYear,
+        $lte: currentYear,
+      },
+    };
+    // console.log(currentYear);
+    const result = await userSalesInv.aggregate([
+      {
+        $match: match,
+      },
+      {
+        $group: {
+          _id: null,
+          totSalesAmt: { $sum: "$data.totalInvValue" },
+          salesReceivedAmt: { $sum: "$data.pendingAmount" },
+        },
+      },
+      // purchase value
+      {
+        $unionWith: {
+          coll: "purchase_invs",
+          pipeline: [
+            {
+              $match: match,
+            },
+            {
+              $group: {
+                _id: null,
+                totPurchAmt: { $sum: "$data.totalInvValue" },
+                purchasePaidAmt: { $sum: "$data.pendingAmount" },
+              },
+            },
+          ],
+        },
+      },
+      // stock value
+      {
+        $unionWith: {
+          coll: "stocks",
+          pipeline: [
+            {
+              $match: {
+                userId: new mongoose.Types.ObjectId(id),
+                createdAt: {
+                  $gte: lastYear,
+                  $lte: currentYear,
+                },
+              },
+            },
+            {
+              $group: {
+                _id: null,
+                stockValue: { $sum: "$data.value" },
+              },
+            },
+          ],
+        },
+      },
+      // today recipt\/
+      {
+        $unionWith: {
+          coll: "sales_invs",
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $eq: [
+                    "$opt_process.date",
+                    {
+                      $dateSubtract: {
+                        startDate: "$$NOW",
+                        unit: "day",
+                        amount: "$data.paymentTerms",
+                      },
+                    },
+                  ],
+                },
+                "data.pendingAmount": { $gt: 0 },
+                "data.modeOfPayment": "Credit",
+              },
+            },
+            {
+              $project: {
+                _id: 0,
+                source: "Sales",
+                invoiceDate: "$data.invoiceDate",
+                paymentTerms: "$data.paymentTerms",
+                invoiceNo: "$data.invoiceNo",
+                amount: "$data.pendingAmount",
+              },
+            },
+          ],
+        },
+      },
+      // today payments\/
+      {
+        $unionWith: {
+          coll: "purchase_invs",
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $eq: [
+                    "$opt_process.date",
+                    {
+                      $dateSubtract: {
+                        startDate:"$$NOW",
+                        unit: "day",
+                        amount: "$data.paymentTerms",
+                      },
+                    },
+                  ],
+                },
+                "data.pendingAmount": { $gt: 0 },
+                "data.modeOfPayment": "Credit",
+              },
+            },
+            {
+              $project: {
+                _id: 0,
+                source: "Purchase",
+                invoiceDate: "$data.invoiceDate",
+                paymentTerms: "$data.paymentTerms",
+                invoiceNo: "$data.invoiceNo",
+                amount: "$data.pendingAmount",
+              },
+            },
+          ],
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          sales: { $max: "$totSalesAmt" },
+          recivable: { $max: "$salesReceivedAmt" },
+          purchase: { $max: "$totPurchAmt" },
+          payable: { $max: "$purchasePaidAmt" },
+          stock: { $max: "$stockValue" },
+          salesInvoices: {
+            $push: {
+              $cond: [
+                { $eq: ["$source", "Sales"] },
+                {
+                  invoiceDate: "$invoiceDate",
+                  invoiceNo: "$invoiceNo",
+                  paymentTerms: "$paymentTerms",
+                  pendingAmount: "$amount",
+                },
+                null,
+              ],
+            },
+          },
+          purchaseInvoices: {
+            $push: {
+              $cond: [
+                { $eq: ["$source", "Purchase"] },
+                {
+                  invoiceDate: "$invoiceDate",
+                  invoiceNo: "$invoiceNo",
+                  paymentTerms: "$paymentTerms",
+                  // pendingAmount: "$pendingAmount",
+                  pendingAmount: "$amount",
+                },
+                null,
+              ],
+            },
+          },
+          salestotal: {
+            $sum: "$salesInvoices.pendingAmount",
+          },
+          purchasetotal: {
+            $sum: "$purchaseInvoices.pendingAmount",
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          sales: 1,
+          recivable: 1,
+          purchase: 1,
+          payable: 1,
+          stock: 1,
+          totalSalesPending: {
+            $sum: "$salesInvoices.pendingAmount",
+          },
+          totalPurchasePending: {
+            $sum: "$purchaseInvoices.pendingAmount",
+          },
+          salesInvoices: {
+            $filter: {
+              input: "$salesInvoices",
+              as: "item",
+              cond: { $ne: ["$$item", null] },
+            },
+          },
+          purchaseInvoices: {
+            $filter: {
+              input: "$purchaseInvoices",
+              as: "item",
+              cond: { $ne: ["$$item", null] },
+            },
+          },
+        },
+      },
+    ]);
+
+    // console.log(result);
+
+    if (result?.length <= 0) {
+      res.status(400).json({ messgae: "data not found" });
+    }
+    const output = result[0];
+    // console.log(result);
+    res.status(200).json(output);
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+};
+
 export {
   stockval,
   getTotpay,
@@ -334,4 +566,5 @@ export {
   getTodayRept,
   getTodayPaymt,
   getTotTaxAmt,
+  getdashboard,
 };
