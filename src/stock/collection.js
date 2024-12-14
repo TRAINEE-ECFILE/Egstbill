@@ -4,6 +4,41 @@ import userStock from "./modules.js";
 import userSalesInv from "../invoice/module.js";
 import userPurchaseInv from "../invoice/pur_module.js";
 
+const getSalAmt = async (req, res) => {
+  try {
+    const lastYear = new Date("2024/05/01");
+    // new Date(
+    //   new Date(
+    //     new Date().setFullYear(new Date().getFullYear() - 1)
+    //   ).toISOString()
+    // );
+    console.log(lastYear);
+
+    const currentYear = new Date("2024/05/31");
+    const docs = await userSalesInv.aggregate([
+      {
+        $match: {
+          userId: new mongoose.Types.ObjectId("66389e368d8bc611a5603eeb"),
+          "opt_process.date": {
+            $gte: lastYear,
+            $lte: currentYear,
+          },
+        },
+      },
+      {
+        $group: { _id: null, totalInvValue: { $sum: "$data.totalInvValue" } },
+      },
+    ]);
+    if (docs?.length <= 0) {
+      return res.status(400).json({ message: "data not found" });
+    }
+    const amount = docs[0].totalInvValue;
+
+    res.status(200).json({ amount });
+  } catch (error) {
+    res.status(500).json(error.messgae);
+  }
+};
 const stockval = async (req, res) => {
   try {
     const reqId = "6732eb433a32c6ef1adc7de0";
@@ -445,7 +480,7 @@ const getdashboard = async (req, res) => {
                     "$opt_process.date",
                     {
                       $dateSubtract: {
-                        startDate:"$$NOW",
+                        startDate: "$$NOW",
                         unit: "day",
                         amount: "$data.paymentTerms",
                       },
@@ -559,6 +594,143 @@ const getdashboard = async (req, res) => {
   }
 };
 
+const getMonthlySales = async (req, res) => {
+  try {
+    let date = new Date(
+      new Date(
+        new Date().setFullYear(new Date().getFullYear() - 1)
+      ).toISOString()
+    );
+    const minutes = date.getMinutes();
+    if (minutes >= 30) {
+      date.setHours(date.getHours() + 1);
+    }
+    const lastYear = new Date(date.setMinutes(0, 0, 0));
+    const currentYear = new Date();
+    const firstMonth = new Date(date.setMonth(new Date().getMonth() - 1));
+    console.log("lastyear", lastYear);
+    console.log(
+      "date",
+      new Date(new Date().setMonth(new Date().getMonth() - 12))
+    );
+
+    const sales_data = await userSalesInv.aggregate([
+      {
+        $match: {
+          userId: new mongoose.Types.ObjectId("6703da05cba43dc40752a124"),
+          "opt_process.date": {
+            $gte: new Date(new Date().setMonth(new Date().getMonth() - 12)), // From 12 months ago
+            $lte: new Date(),
+          },
+        },
+      },
+      {
+        $addFields: {
+          month: { $month: "$opt_process.date" },
+          year: { $year: "$opt_process.date" },
+        },
+      },
+      {
+        $group: {
+          _id: { year: "$year", month: "$month" },
+          totalInvValue: { $sum: "$data.totalInvValue" },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          month: "$_id.month",
+          totalInvValue:{$ifNull:["$totalInvValue",0]} ,
+
+        },
+      },
+      {
+        $sort: { year: 1, month: 1 },
+      },
+    ]);
+
+    // const sales_data = await userSalesInv.aggregate([
+    //   {
+    //     $match: {
+    //       userId: new mongoose.Types.ObjectId("6703da05cba43dc40752a124"),
+    //       "opt_process.date": {
+    //         $gte: new Date(new Date().setMonth(new Date().getMonth() - 12)), // From 12 months ago
+    //         $lte: new Date(),
+    //       },
+    //     },
+    //   },
+    //   {
+    //     $addFields: {
+    //       month: { $month: "$opt_process.date" },
+    //       year: { $year: "$opt_process.date" },
+    //     },
+    //   },
+    //   {
+    //     $group: {
+    //       _id: { year: "$year", month: "$month" },
+    //       totalInvValue: { $sum: "$data.totalInvValue" },
+    //     },
+    //   },
+    //   {
+    //     $project: {
+    //       _id: 0,
+    //       month: "$_id.month",
+    //       totalInvValue: { $ifNull: ["$totalInvValue", 0] }, // If null, set to 0
+    //     },
+    //   },
+    //   {
+    //     $lookup: {
+    //       from: "months", // Creating a static array with months 1-12
+    //       pipeline: [
+    //         { $project: { month: { $literal: 1 } } },
+    //         { $project: { month: { $literal: 2 } } },
+    //         { $project: { month: { $literal: 3 } } },
+    //         { $project: { month: { $literal: 4 } } },
+    //         { $project: { month: { $literal: 5 } } },
+    //         { $project: { month: { $literal: 6 } } },
+    //         { $project: { month: { $literal: 7 } } },
+    //         { $project: { month: { $literal: 8 } } },
+    //         { $project: { month: { $literal: 9 } } },
+    //         { $project: { month: { $literal: 10 } } },
+    //         { $project: { month: { $literal: 11 } } },
+    //         { $project: { month: { $literal: 12 } } },
+    //       ],
+    //       as: "months",
+    //     },
+    //   },
+    //   {
+    //     $unwind: {
+    //       path: "$months",
+    //       preserveNullAndEmptyArrays: true, // Keep the months even if no data for some
+    //     },
+    //   },
+    //   {
+    //     $project: {
+    //       month: "$months.month",
+    //       totalInvValue: {
+    //         $ifNull: [
+    //           "$totalInvValue", // If no data for the month, it will be 0
+    //           0,
+    //         ],
+    //       },
+    //     },
+    //   },
+    //   {
+    //     $sort: { month: 1 }, // Ensure correct sorting by month
+    //   },
+    // ]);
+
+    
+
+    if (sales_data?.length <= 0) {
+      return res.status(400).json({ message: "data not found" });
+    }
+    res.status(200).json({ sales_data });
+  } catch (error) {
+    res.status(500).json(error.message);
+  }
+};
+
 export {
   stockval,
   getTotpay,
@@ -567,4 +739,6 @@ export {
   getTodayPaymt,
   getTotTaxAmt,
   getdashboard,
+  getMonthlySales,
+  getSalAmt,
 };
